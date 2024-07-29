@@ -15,6 +15,9 @@ from .resnet import (
 from .vit import ViT, SimpleFeaturePyramid, get_vit_lr_decay_rate
 from .mvit import MViT
 from .swin import SwinTransformer
+from .config import add_convnext_config
+from .convnext import ConvNeXt, build_convnext_fpn_backbone
+from .convnextv2 import ConvNeXtV2
 
 __all__ = [k for k in globals().keys() if not k.startswith("_")]
 # TODO can expose more resnet blocks after careful consideration

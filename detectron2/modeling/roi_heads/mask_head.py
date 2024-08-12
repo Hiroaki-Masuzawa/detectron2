@@ -396,6 +396,14 @@ def ms_rcnn_inference(pred_mask_logits: torch.Tensor, pred_iou_logits: torch.Ten
         instances.iou = iou
         instances.class_scores = instances.scores
         instances.scores = iou * instances.class_scores
+        arg_idx = torch.argsort(instances.scores, descending=True)
+        
+        #pred_boxes, scores, pred_masks, iou, class_scores
+        instances.pred_boxes = instances.pred_boxes[arg_idx]
+        instances.scores = instances.scores[arg_idx]
+        instances.pred_masks = instances.pred_masks[arg_idx]
+        instances.iou = instances.iou[arg_idx]
+        instances.class_scores = instances.class_scores[arg_idx]
 
 class MaskScoringRCNNConvUpsampleHead(BaseMaskRCNNHead):
     @configurable

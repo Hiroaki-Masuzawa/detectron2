@@ -219,7 +219,7 @@ class MaskRCNNConvUpsampleHead(BaseMaskRCNNHead, nn.Sequential):
     """
 
     @configurable
-    def __init__(self, input_shape: ShapeSpec, *, num_classes, conv_dims, conv_norm="", **kwargs):
+    def __init__(self, input_shape: ShapeSpec, *, num_classes, conv_dims, conv_norm="", upscale_method='default', **kwargs):
         """
         NOTE: this interface is experimental.
 
@@ -252,21 +252,42 @@ class MaskRCNNConvUpsampleHead(BaseMaskRCNNHead, nn.Sequential):
             self.add_module("mask_fcn{}".format(k + 1), conv)
             self.conv_norm_relus.append(conv)
             cur_channels = conv_dim
+        assert upscale_method in ['default', 'pixelshuffle'], upscale_method
+        self.upscale_method = upscale_method
+        if self.upscale_method == 'normal':
+            self.deconv = ConvTranspose2d(
+                cur_channels, conv_dims[-1], kernel_size=2, stride=2, padding=0
+            )
+            self.add_module("deconv_relu", nn.ReLU())
+            cur_channels = conv_dims[-1]
 
-        self.deconv = ConvTranspose2d(
-            cur_channels, conv_dims[-1], kernel_size=2, stride=2, padding=0
-        )
-        self.add_module("deconv_relu", nn.ReLU())
-        cur_channels = conv_dims[-1]
+            self.predictor = Conv2d(cur_channels, num_classes, kernel_size=1, stride=1, padding=0)
+        elif self.upscale_method == 'pixelshuffle' :
+            conv = Conv2d(
+                cur_channels,
+                conv_dims[-1],
+                kernel_size=3,
+                stride=1,
+                padding=1,
+                bias=not conv_norm,
+                norm=get_norm(conv_norm, conv_dim),
+                activation=nn.ReLU(),
+            )
+            self.add_module("mask_fcn{}".format(len(conv_dims) + 1), conv)
+            self.conv_norm_relus.append(conv)
+            
+            conv_f = Conv2d(conv_dims[-1], num_classes*(2**2), 1, stride=1, padding=0)
+            self.add_module("mask_fcn{}".format(len(conv_dims) + 2), conv_f)
+            self.conv_norm_relus.append(conv_f)
+            self.upscale_layer =  nn.PixelShuffle(2)
 
-        self.predictor = Conv2d(cur_channels, num_classes, kernel_size=1, stride=1, padding=0)
-
-        for layer in self.conv_norm_relus + [self.deconv]:
+        for layer in self.conv_norm_relus + [self.deconv] if self.upscale_method == 'normal' else []:
             weight_init.c2_msra_fill(layer)
-        # use normal distribution initialization for mask prediction layer
-        nn.init.normal_(self.predictor.weight, std=0.001)
-        if self.predictor.bias is not None:
-            nn.init.constant_(self.predictor.bias, 0)
+        if self.upscale_method == 'normal':
+            # use normal distribution initialization for mask prediction layer
+            nn.init.normal_(self.predictor.weight, std=0.001)
+            if self.predictor.bias is not None:
+                nn.init.constant_(self.predictor.bias, 0)
 
     @classmethod
     def from_config(cls, cfg, input_shape):

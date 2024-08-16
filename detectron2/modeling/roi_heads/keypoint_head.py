@@ -284,7 +284,7 @@ class KRCNNConvDeconvUpsampleHead(BaseKeypointRCNNHead, nn.Sequential):
     """
 
     @configurable
-    def __init__(self, input_shape, *, num_keypoints, conv_dims, **kwargs):
+    def __init__(self, input_shape, *, num_keypoints, conv_dims, upscale_method='default', **kwargs):
         """
         NOTE: this interface is experimental.
 
@@ -304,12 +304,17 @@ class KRCNNConvDeconvUpsampleHead(BaseKeypointRCNNHead, nn.Sequential):
             self.add_module("conv_fcn{}".format(idx), module)
             self.add_module("conv_fcn_relu{}".format(idx), nn.ReLU())
             in_channels = layer_channels
-
-        deconv_kernel = 4
-        self.score_lowres = ConvTranspose2d(
-            in_channels, num_keypoints, deconv_kernel, stride=2, padding=deconv_kernel // 2 - 1
-        )
-        self.up_scale = up_scale
+        assert upscale_method in ['default', 'pixelshuffle'], upscale_method
+        self.upscale_method = upscale_method
+        if self.upscale_method == 'default':
+            deconv_kernel = 4
+            self.score_lowres = ConvTranspose2d(
+                in_channels, num_keypoints, deconv_kernel, stride=2, padding=deconv_kernel // 2 - 1
+            )
+            self.up_scale = up_scale
+        elif self.upscale_method == 'pixelshuffle':
+            self.score_lowres = Conv2d(in_channels, num_keypoints*(4**2), 1, stride=1, padding=0)
+            self.upscale_layer =  nn.PixelShuffle(4)
 
         for name, param in self.named_parameters():
             if "bias" in name:
@@ -329,5 +334,8 @@ class KRCNNConvDeconvUpsampleHead(BaseKeypointRCNNHead, nn.Sequential):
     def layers(self, x):
         for layer in self:
             x = layer(x)
-        x = interpolate(x, scale_factor=self.up_scale, mode="bilinear", align_corners=False)
+        if self.upscale_method == 'default':
+            x = interpolate(x, scale_factor=self.up_scale, mode="bilinear", align_corners=False)
+        # elif self.upscale_method == 'pixelshuffle':
+        #     x = self.upscale_layer(x)
         return x
